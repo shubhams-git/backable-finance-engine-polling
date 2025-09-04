@@ -4084,14 +4084,11 @@
                 reject(new Error('Upload failed due to network error'));
               });
               
-              // Handle upload timeout
-              xhr.addEventListener('timeout', () => {
-                reject(new Error('Upload timed out'));
-              });
+              // No timeout handling - uploads can take as long as needed
               
               // Configure and send request
               xhr.open('POST', `${API_BASE_URL}/process_financial_document_blob_first`);
-              xhr.timeout = 300000; // 5 minute timeout
+              // No timeout - let it run as long as needed
               xhr.send(formData);
             });
 
