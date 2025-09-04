@@ -816,6 +816,12 @@
         transform: rotate(5deg);
       }
 
+      .ranking-item.drag-over {
+        border: 2px dashed #1976d2;
+        background: rgba(25, 118, 210, 0.1);
+        transform: scale(1.02);
+      }
+
       .ranking-number {
         background: linear-gradient(135deg, #0f4c75, #3282b8);
         color: white;
@@ -1280,7 +1286,7 @@
 
     <script>
       // Configuration - Backend integration
-      const API_BASE_URL = "http://localhost:8001";// For local development
+      const API_BASE_URL = "http://192.168.0.131:8001";// For local development
 
       // Global variables
       let currentUserId = null;
@@ -4655,60 +4661,100 @@
 
         items.forEach((item, index) => {
           item.addEventListener("dragstart", (e) => {
-            e.dataTransfer.setData("text/plain", index);
+            console.log(`🔄 Drag started: item ${index}`);
+            e.dataTransfer.setData("text/plain", index.toString());
+            e.dataTransfer.effectAllowed = "move";
             item.classList.add("dragging");
           });
 
-          item.addEventListener("dragend", () => {
+          item.addEventListener("dragend", (e) => {
+            console.log(`🔄 Drag ended: item ${index}`);
             item.classList.remove("dragging");
+            // Clean up any leftover visual states
+            const allItems = container.querySelectorAll(".ranking-item");
+            allItems.forEach(i => i.classList.remove("drag-over"));
           });
 
           item.addEventListener("dragover", (e) => {
             e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            item.classList.add("drag-over");
+          });
+
+          item.addEventListener("dragleave", (e) => {
+            item.classList.remove("drag-over");
           });
 
           item.addEventListener("drop", (e) => {
             e.preventDefault();
-            const draggedIndex = parseInt(e.dataTransfer.getData("text/plain"));
+            e.stopPropagation();
+            
+            const draggedIndexStr = e.dataTransfer.getData("text/plain");
+            const draggedIndex = parseInt(draggedIndexStr);
             const targetIndex = index;
 
-            if (draggedIndex !== targetIndex) {
-              reorderRankingItems(
-                container,
-                draggedIndex,
-                targetIndex,
-                questionId
-              );
+            console.log(`🔄 Drop event: from ${draggedIndex} to ${targetIndex}`);
+
+            item.classList.remove("drag-over");
+
+            if (isNaN(draggedIndex) || draggedIndex === targetIndex) {
+              console.log("🔄 Invalid or same-position drop, ignoring");
+              return;
             }
+
+            reorderRankingItems(
+              container,
+              draggedIndex,
+              targetIndex,
+              questionId
+            );
           });
         });
       }
 
       function reorderRankingItems(container, fromIndex, toIndex, questionId) {
         const items = Array.from(container.querySelectorAll(".ranking-item"));
+        
+        if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length) {
+          console.error("Invalid drag indices:", { fromIndex, toIndex, itemsLength: items.length });
+          return;
+        }
+        
         const draggedItem = items[fromIndex];
 
-        // Remove dragged item
+        // Create a more robust reordering approach
+        if (fromIndex === toIndex) {
+          return; // No need to reorder if same position
+        }
+
+        // Remove dragged item from DOM
         draggedItem.remove();
 
+        // Get fresh list of items after removal
+        const remainingItems = Array.from(container.querySelectorAll(".ranking-item"));
+        
+        // Calculate the correct insertion point
+        let insertIndex = toIndex;
+        if (fromIndex < toIndex) {
+          insertIndex = toIndex - 1; // Adjust for removed item
+        }
+
         // Insert at new position
-        if (toIndex >= items.length - 1) {
+        if (insertIndex >= remainingItems.length) {
           container.appendChild(draggedItem);
         } else {
-          container.insertBefore(
-            draggedItem,
-            items[toIndex + (fromIndex < toIndex ? 0 : 1)]
-          );
+          container.insertBefore(draggedItem, remainingItems[insertIndex]);
         }
 
         // Update ranking numbers
         updateRankingNumbers(container);
 
-        // Update response
+        // Update response with fresh data
         const rankedOptions = Array.from(
           container.querySelectorAll(".ranking-item")
         ).map((item) => item.getAttribute("data-option"));
 
+        console.log("🔄 Reordered items:", rankedOptions);
         FinanceEngine.updateResponse(questionId, rankedOptions, "ranking");
       }
 
@@ -6202,6 +6248,26 @@
             console.error(`❌ DELETE ERROR:`, error);
             return { error: error.message };
           }
+        },
+        
+        // Debug function to test ranking functionality
+        debugRanking: (questionId) => {
+          const container = document.querySelector(`#ranking_${questionId}`);
+          if (!container) {
+            console.error(`❌ Ranking container not found for question: ${questionId}`);
+            return null;
+          }
+          
+          const items = Array.from(container.querySelectorAll('.ranking-item'));
+          const currentOrder = items.map((item, index) => ({
+            position: index + 1,
+            text: item.querySelector('.ranking-text').textContent,
+            option: item.getAttribute('data-option'),
+            originalIndex: item.getAttribute('data-original-index')
+          }));
+          
+          console.log(`🔄 Current ranking for ${questionId}:`, currentOrder);
+          return currentOrder;
         },
 
         // Financial analysis
