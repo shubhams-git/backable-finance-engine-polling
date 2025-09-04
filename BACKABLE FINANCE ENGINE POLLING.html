@@ -4654,108 +4654,227 @@
 
       // Ranking functionality
       function initializeRanking(questionId) {
+        console.log(`🎯 INITIALIZING RANKING for question: ${questionId}`);
+        
         const container = document.getElementById(`ranking_${questionId}`);
-        if (!container) return;
+        if (!container) {
+          console.error(`❌ Container not found: ranking_${questionId}`);
+          return;
+        }
+        console.log(`✅ Container found:`, container);
 
         const items = container.querySelectorAll(".ranking-item");
+        console.log(`📝 Found ${items.length} ranking items`);
+
+        if (items.length === 0) {
+          console.error("❌ No ranking items found in container");
+          return;
+        }
+
+        // Log initial state
+        items.forEach((item, idx) => {
+          const text = item.querySelector('.ranking-text')?.textContent || 'No text';
+          console.log(`   Item ${idx}: "${text}" - draggable: ${item.draggable}`);
+        });
 
         items.forEach((item, index) => {
-          item.addEventListener("dragstart", (e) => {
-            console.log(`🔄 Drag started: item ${index}`);
-            e.dataTransfer.setData("text/plain", index.toString());
-            e.dataTransfer.effectAllowed = "move";
-            item.classList.add("dragging");
+          // Ensure item is draggable
+          item.setAttribute('draggable', 'true');
+          console.log(`🔧 Setting up item ${index}: draggable=${item.draggable}`);
+          
+          // Clear existing listeners by cloning (prevents duplicate listeners)
+          const newItem = item.cloneNode(true);
+          item.parentNode.replaceChild(newItem, item);
+          newItem.setAttribute('draggable', 'true');
+          
+          newItem.addEventListener("dragstart", (e) => {
+            console.log(`🚀 DRAGSTART: Item ${index}`);
+            console.log(`   - Text: "${newItem.querySelector('.ranking-text')?.textContent}"`);
+            console.log(`   - DataTransfer available: ${!!e.dataTransfer}`);
+            console.log(`   - Item draggable: ${newItem.draggable}`);
+            
+            try {
+              e.dataTransfer.setData("text/plain", index.toString());
+              e.dataTransfer.effectAllowed = "move";
+              newItem.classList.add("dragging");
+              
+              // Store additional data for debugging
+              e.dataTransfer.setData("application/json", JSON.stringify({
+                index: index,
+                questionId: questionId,
+                text: newItem.querySelector('.ranking-text')?.textContent
+              }));
+              
+              console.log(`   ✅ Data stored: "${index}"`);
+            } catch (error) {
+              console.error(`   ❌ Error in dragstart:`, error);
+            }
           });
 
-          item.addEventListener("dragend", (e) => {
-            console.log(`🔄 Drag ended: item ${index}`);
-            item.classList.remove("dragging");
-            // Clean up any leftover visual states
+          newItem.addEventListener("dragend", (e) => {
+            console.log(`🏁 DRAGEND: Item ${index}`);
+            newItem.classList.remove("dragging");
+            // Clean up all drag states
             const allItems = container.querySelectorAll(".ranking-item");
             allItems.forEach(i => i.classList.remove("drag-over"));
           });
 
-          item.addEventListener("dragover", (e) => {
+          newItem.addEventListener("dragenter", (e) => {
+            console.log(`➡️ DRAGENTER: Item ${index}`);
+            e.preventDefault();
+          });
+
+          newItem.addEventListener("dragover", (e) => {
+            console.log(`🔄 DRAGOVER: Item ${index}`);
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
-            item.classList.add("drag-over");
+            newItem.classList.add("drag-over");
           });
 
-          item.addEventListener("dragleave", (e) => {
-            item.classList.remove("drag-over");
+          newItem.addEventListener("dragleave", (e) => {
+            console.log(`⬅️ DRAGLEAVE: Item ${index}`);
+            if (!newItem.contains(e.relatedTarget)) {
+              newItem.classList.remove("drag-over");
+            }
           });
 
-          item.addEventListener("drop", (e) => {
+          newItem.addEventListener("drop", (e) => {
+            console.log(`💥 DROP EVENT on item ${index}`);
+            console.log(`   - Event target: ${e.target.tagName}`);
+            console.log(`   - Current target: ${e.currentTarget.tagName}`);
+            
             e.preventDefault();
             e.stopPropagation();
             
-            const draggedIndexStr = e.dataTransfer.getData("text/plain");
-            const draggedIndex = parseInt(draggedIndexStr);
-            const targetIndex = index;
+            try {
+              const draggedIndexStr = e.dataTransfer.getData("text/plain");
+              const draggedIndex = parseInt(draggedIndexStr);
+              const targetIndex = index;
 
-            console.log(`🔄 Drop event: from ${draggedIndex} to ${targetIndex}`);
+              console.log(`   - Raw dragged data: "${draggedIndexStr}"`);
+              console.log(`   - Parsed dragged index: ${draggedIndex}`);
+              console.log(`   - Target index: ${targetIndex}`);
+              console.log(`   - Valid number: ${!isNaN(draggedIndex)}`);
+              
+              // Try JSON data as backup
+              try {
+                const jsonData = e.dataTransfer.getData("application/json");
+                if (jsonData) {
+                  const parsed = JSON.parse(jsonData);
+                  console.log(`   - JSON backup data:`, parsed);
+                }
+              } catch (jsonErr) {
+                console.log(`   - No JSON backup data`);
+              }
 
-            item.classList.remove("drag-over");
+              newItem.classList.remove("drag-over");
 
-            if (isNaN(draggedIndex) || draggedIndex === targetIndex) {
-              console.log("🔄 Invalid or same-position drop, ignoring");
-              return;
+              if (isNaN(draggedIndex)) {
+                console.error(`❌ Invalid drag index - cannot reorder`);
+                return;
+              }
+
+              if (draggedIndex === targetIndex) {
+                console.log(`ℹ️ Same position drop, ignoring`);
+                return;
+              }
+
+              console.log(`✅ CALLING reorderRankingItems(${draggedIndex} → ${targetIndex})`);
+              reorderRankingItems(container, draggedIndex, targetIndex, questionId);
+              
+            } catch (error) {
+              console.error(`❌ Error in drop handler:`, error);
             }
-
-            reorderRankingItems(
-              container,
-              draggedIndex,
-              targetIndex,
-              questionId
-            );
           });
         });
+        
+        console.log(`✅ Drag and drop setup complete for ${questionId}`);
       }
 
       function reorderRankingItems(container, fromIndex, toIndex, questionId) {
-        const items = Array.from(container.querySelectorAll(".ranking-item"));
+        console.log(`🔄 REORDER RANKING ITEMS START`);
+        console.log(`   - Question ID: ${questionId}`);
+        console.log(`   - From: ${fromIndex}, To: ${toIndex}`);
         
+        const items = Array.from(container.querySelectorAll(".ranking-item"));
+        console.log(`   - Total items found: ${items.length}`);
+        
+        // Log current state before reordering
+        items.forEach((item, idx) => {
+          const text = item.querySelector('.ranking-text')?.textContent || 'No text';
+          const option = item.getAttribute('data-option');
+          console.log(`     [${idx}] "${text}" (data-option: "${option}")`);
+        });
+        
+        // Validation
         if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length) {
-          console.error("Invalid drag indices:", { fromIndex, toIndex, itemsLength: items.length });
+          console.error("❌ Invalid drag indices:", { fromIndex, toIndex, itemsLength: items.length });
           return;
         }
         
         const draggedItem = items[fromIndex];
+        const draggedText = draggedItem.querySelector('.ranking-text')?.textContent || 'No text';
+        console.log(`   - Dragged item: "${draggedText}"`);
 
-        // Create a more robust reordering approach
+        // Same position check
         if (fromIndex === toIndex) {
-          return; // No need to reorder if same position
+          console.log("ℹ️ Same position, no reordering needed");
+          return;
         }
 
         // Remove dragged item from DOM
+        console.log(`   - Removing dragged item from DOM...`);
         draggedItem.remove();
 
         // Get fresh list of items after removal
         const remainingItems = Array.from(container.querySelectorAll(".ranking-item"));
+        console.log(`   - Remaining items after removal: ${remainingItems.length}`);
         
         // Calculate the correct insertion point
         let insertIndex = toIndex;
         if (fromIndex < toIndex) {
           insertIndex = toIndex - 1; // Adjust for removed item
         }
+        
+        console.log(`   - Calculated insert index: ${insertIndex}`);
 
         // Insert at new position
         if (insertIndex >= remainingItems.length) {
+          console.log(`   - Appending to end`);
           container.appendChild(draggedItem);
         } else {
-          container.insertBefore(draggedItem, remainingItems[insertIndex]);
+          console.log(`   - Inserting before item ${insertIndex}`);
+          const targetItem = remainingItems[insertIndex];
+          const targetText = targetItem?.querySelector('.ranking-text')?.textContent || 'No text';
+          console.log(`   - Target item for insertion: "${targetText}"`);
+          container.insertBefore(draggedItem, targetItem);
         }
 
         // Update ranking numbers
+        console.log(`   - Updating ranking numbers...`);
         updateRankingNumbers(container);
 
-        // Update response with fresh data
-        const rankedOptions = Array.from(
-          container.querySelectorAll(".ranking-item")
-        ).map((item) => item.getAttribute("data-option"));
+        // Get final order
+        const finalItems = Array.from(container.querySelectorAll(".ranking-item"));
+        const rankedOptions = finalItems.map((item) => item.getAttribute("data-option"));
+        
+        console.log(`   - Final order:`);
+        finalItems.forEach((item, idx) => {
+          const text = item.querySelector('.ranking-text')?.textContent || 'No text';
+          const option = item.getAttribute('data-option');
+          console.log(`     [${idx + 1}] "${text}" (data-option: "${option}")`);
+        });
 
-        console.log("🔄 Reordered items:", rankedOptions);
+        console.log(`   - Updating response with:`, rankedOptions);
         FinanceEngine.updateResponse(questionId, rankedOptions, "ranking");
+        
+        console.log(`✅ REORDER COMPLETE`);
+        
+        // Re-initialize drag and drop for the reordered items
+        console.log(`🔄 Re-initializing drag and drop after reorder...`);
+        setTimeout(() => {
+          initializeRanking(questionId);
+        }, 100);
       }
 
       function updateRankingNumbers(container) {
@@ -6252,22 +6371,78 @@
         
         // Debug function to test ranking functionality
         debugRanking: (questionId) => {
+          console.log(`🔍 DEBUGGING RANKING for ${questionId}`);
+          
           const container = document.querySelector(`#ranking_${questionId}`);
           if (!container) {
             console.error(`❌ Ranking container not found for question: ${questionId}`);
             return null;
           }
+          console.log(`✅ Container found:`, container);
           
           const items = Array.from(container.querySelectorAll('.ranking-item'));
-          const currentOrder = items.map((item, index) => ({
-            position: index + 1,
-            text: item.querySelector('.ranking-text').textContent,
-            option: item.getAttribute('data-option'),
-            originalIndex: item.getAttribute('data-original-index')
-          }));
+          console.log(`📝 Items found: ${items.length}`);
           
-          console.log(`🔄 Current ranking for ${questionId}:`, currentOrder);
+          if (items.length === 0) {
+            console.error(`❌ No ranking items found`);
+            return null;
+          }
+          
+          const currentOrder = items.map((item, index) => {
+            const text = item.querySelector('.ranking-text')?.textContent || 'No text';
+            const option = item.getAttribute('data-option');
+            const draggable = item.draggable;
+            const hasEventListeners = item.hasAttribute('data-drag-setup');
+            
+            return {
+              position: index + 1,
+              text: text,
+              option: option,
+              draggable: draggable,
+              hasEventListeners: hasEventListeners
+            };
+          });
+          
+          console.log(`🔄 Current ranking state:`);
+          currentOrder.forEach(item => {
+            console.log(`   ${item.position}. "${item.text}" (draggable: ${item.draggable})`);
+          });
+          
           return currentOrder;
+        },
+        
+        // Force re-initialize drag and drop
+        reinitializeRanking: (questionId) => {
+          console.log(`🔄 Force re-initializing ranking for ${questionId}`);
+          initializeRanking(questionId);
+          return `Drag and drop re-initialized for ${questionId}`;
+        },
+        
+        // Test drag and drop setup
+        testDragDrop: (questionId) => {
+          console.log(`🧪 TESTING DRAG & DROP for ${questionId}`);
+          
+          const container = document.querySelector(`#ranking_${questionId}`);
+          if (!container) {
+            console.error(`❌ No container found`);
+            return false;
+          }
+          
+          const items = container.querySelectorAll('.ranking-item');
+          console.log(`📝 Testing ${items.length} items:`);
+          
+          items.forEach((item, index) => {
+            const text = item.querySelector('.ranking-text')?.textContent || 'No text';
+            const draggable = item.getAttribute('draggable');
+            const hasDragStart = item.ondragstart !== null;
+            
+            console.log(`   Item ${index}: "${text}"`);
+            console.log(`     - draggable attribute: ${draggable}`);
+            console.log(`     - draggable property: ${item.draggable}`);
+            console.log(`     - has dragstart handler: ${hasDragStart}`);
+          });
+          
+          return true;
         },
 
         // Financial analysis
